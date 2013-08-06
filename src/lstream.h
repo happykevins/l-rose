@@ -74,7 +74,9 @@ public:
 	inline bool write(const LRef<T>& v)
 	{
 		write_ref_id(v.ref_id());
-		return  write_object(v.get());
+		if (v.ref_id() == 0)
+			return true;
+		return write_object(v.get());
 	}
 
 	template<typename T>
@@ -83,22 +85,10 @@ public:
 		int ref_id = 0;
 		read_ref_id(ref_id);
 		v.set_ref_id(ref_id);
-		return read_object(v.get());
-	}
-
-	template<typename T>
-	inline bool write(const LMember<T>& v)
-	{
-		write_ref_id(v.id());
-		return write_object(v.get());
-	}
-
-	template<typename T>
-	inline bool read(LMember<T>& v)
-	{
-		int ref_id = 0;
-		read_ref_id(ref_id);
-		v.set_id(ref_id);
+		if (ref_id == 0)
+			return true;
+		if (!v.get()) // TODO: get object from ref_cache
+			v = LRef<T>(typename T::l_new());
 		return read_object(v.get());
 	}
 };

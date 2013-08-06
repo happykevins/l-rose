@@ -10,6 +10,7 @@ namespace lros {
 class LObject
 {
 public:
+	LObject() {};
 	virtual ~LObject() {};
 
 	inline static const LClass* l_meta_class() { return &s_meta_class; }
@@ -27,13 +28,16 @@ public:
 	bool l_instance_of() const { return l_instance_of(typename T::l_meta_class()); }
 
 	static void l_static_init() { }
-	static LObject* l_create_object() { return new LObject; }
+	
 	static bool l_serialize(lros::LStream& s, const LObject* obj);
 	static bool l_deserialize(lros::LStream& s, LObject* obj);
 
+	static LObject* l_new() { return NULL; }
+	virtual void l_init() {};
+
 	template<typename T>
 	static inline void __register_fields() {}
-	static const int __fieldid_reserved = -1;
+	static inline int __fields_reserved() { return -1; }
 
 private:
 	static const LClass s_meta_class;
@@ -45,12 +49,14 @@ struct LField
 {
 	typedef std::function<bool(LStream&, const T&)> Serializer;
 	typedef std::function<bool(LStream&, T&)> Deserializer;
+	typedef std::function<void(T&)> Initializer;
 	LField() : field_id(0), field_name(NULL) {}
 
 	int field_id;
 	const char* field_name;
 	Serializer serializer;
 	Deserializer deserializer;
+	Initializer initializer;
 };
 
 template<typename T>
@@ -86,16 +92,33 @@ public:
 	static const lros::LClass __meta_class;
 	static LFieldRegistry<LClassType> __field_registry;
 
-	inline static const lros::LClass* l_meta_class() { return &LDerivedType::__meta_class; }
 	virtual const lros::LClass* l_class() const { return &LDerivedType::__meta_class; }
+	inline static const lros::LClass* l_meta_class() { return &LDerivedType::__meta_class; }
 	static void l_static_init() { __register_fields<LClassType>(); }
-	static LObject* l_create_object() { return new LClassType; }
+	static LClassType* l_new() 
+	{ 
+		LClassType* obj = new LClassType;
+		LClassType::l_constructor(obj);
+		return obj; 
+	}
+
+	static void l_constructor(LClassType* obj) 
+	{ 
+		std::cout << __FUNCTION__ << std::endl; 
+		for(auto f : LClassType::__field_registry.field_list) 
+		{
+			f.initializer(*obj);
+		} 
+
+		obj->l_init();
+	}
 
 	static bool l_serialize(lros::LStream& s, const lros::LObject* obj) 
 	{ 
+		std::cout << __FUNCTION__ << std::endl; 
 		assert(obj->l_same_class<LClassType>() && "Serialized Object Class Must Same!"); 
 		const LClassType& dobj = dynamic_cast<const LClassType&>(*obj); 
-		std::cout << __FUNCTION__ << std::endl; 
+		
 		for(auto f : LClassType::__field_registry.field_list) 
 		{ 
 			s.write_field_id(f.field_id); 
@@ -106,9 +129,10 @@ public:
 	} 
 	static bool l_deserialize(lros::LStream& s, LObject* obj) 
 	{ 
+		std::cout << __FUNCTION__ << std::endl; 
 		assert(obj->l_same_class<LClassType>() && "Deserialized Object Class Must Same!"); 
 		LClassType& dobj = dynamic_cast<LClassType&>(*obj); 
-		std::cout << __FUNCTION__ << std::endl; 
+		
 		int field_id = -1; 
 		for(s.read_field_id(field_id); field_id != -1; s.read_field_id(field_id)) 
 		{ 
@@ -123,6 +147,11 @@ public:
 		return true; 
 	}
 
+	static inline int __fields_reserved() 
+	{ 
+		return LClassType::__field_registry.fields_reserved; 
+	}
+
 	template<typename D>
 	static inline void __register_fields() 
 	{ 
@@ -132,8 +161,14 @@ public:
 	} 
 	static inline int __get_super_fieldid_reserved() 
 	{ 
-		return LSuperClassType::__fieldid_reserved; 
+		return LSuperClassType::__fields_reserved(); 
 	} 
+
+private:
+	static void* operator new(size_t _size)
+	{
+		return ::operator new(_size);
+	}
 };
 
 }//lros

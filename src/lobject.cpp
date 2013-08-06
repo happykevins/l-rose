@@ -7,7 +7,7 @@ std::map<int, const LClass*> LClass::s_class_map;
 const LClass LObject::s_meta_class(
 	(int)l_root, "LObject", NULL,
 	std::bind(
-	&LObject::l_create_object),
+	&LObject::l_new),
 	std::bind(
 	&LObject::l_serialize,
 	std::placeholders::_1,

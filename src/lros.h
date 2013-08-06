@@ -15,9 +15,7 @@
 //	3.Meta Data
 //
 //	TODO:
-//	- default value
 //	- array support, access, replicate
-//	- treat member as ref when replicate, combine member & ref class
 //	- ensure LClass class map init first, init static member use new
 //
 
@@ -59,7 +57,7 @@ inline void _lros_dump_class_info()
 	const lros::LClass class_name::LDerivedType::__meta_class( \
 		class_id, #class_name, class_name::LSuperClassType::l_meta_class(), \
 		std::bind( \
-		&class_name::LDerivedType::l_create_object), \
+		&class_name::LDerivedType::l_new), \
 		std::bind( \
 		&class_name::LDerivedType::l_serialize, \
 		std::placeholders::_1, \
@@ -71,7 +69,6 @@ inline void _lros_dump_class_info()
 		std::bind( \
 		&class_name::LDerivedType::l_static_init) \
 		); \
-
 
 //////////////////////////////////////////////////////////////////////////
 #define L_FIELD_LIST_BEGIN \
@@ -105,6 +102,9 @@ public: \
 	&T::__deserialize_##name, \
 	std::placeholders::_1,  \
 	std::placeholders::_2); \
+	_field.initializer = std::bind( \
+	&T::__initialize_##name, \
+	std::placeholders::_1); \
 	T::LDerivedType::__field_registry.field_list.push_back(_field); \
 	assert(T::LDerivedType::__field_registry.field_list.size() < lros::kMaxFieldCount \
 		&& "LROS class fields count must < kMaxFieldCount!"); \
@@ -114,7 +114,7 @@ public: \
 	T::LDerivedType::__field_registry.field_map[id] = _field; \
 } \
 
-#define L_FIELD_STD(name, type) \
+#define __L_FIELD_STD(name, type, defaultv) \
 private:	\
 	type __##name; \
 public:		\
@@ -131,13 +131,25 @@ public:		\
 		std::cout << __FUNCTION__ << std::endl; \
 		return s.read(e.__##name); \
 	} \
+	static void __initialize_##name(LClassType& e) \
+	{ \
+		std::cout << __FUNCTION__ << std::endl; \
+		e.__##name = defaultv; \
+	} \
 
-#define __L_FIELD_REF(name, ref_type, raw_type) \
+#define L_FIELD_STD(name, type) \
+	__L_FIELD_STD(name, type, lros::LTypeTrait<type>::default_value()) \
+
+#define L_FIELD_STD_DEF(name, type, defaultv) \
+	__L_FIELD_STD(name, type, defaultv) \
+
+
+#define __L_FIELD_REF(name, ref_type, raw_type, new_in_default) \
 private:	\
 	ref_type __##name; \
 public:		\
-	raw_type* get_##name() { return __##name.get(); } \
-	void set_##name(raw_type* ##name) { __##name = ref_type(##name); } \
+	ref_type& get_##name() { return __##name; } \
+	void set_##name(const ref_type& ##name) { __##name = ##name; } \
 	static bool __serialize_##name(lros::LStream& s, const LClassType& e) \
 	{ \
 		std::cout << __FUNCTION__ << std::endl; \
@@ -147,30 +159,19 @@ public:		\
 	{ \
 		std::cout << __FUNCTION__ << std::endl; \
 		return s.read(e.__##name); \
+	} \
+	static void __initialize_##name(LClassType& e) \
+	{ \
+		std::cout << __FUNCTION__ << std::endl; \
+		if (new_in_default) \
+			e.__##name = ref_type(raw_type::l_new()); \
 	} \
 	
 #define L_FIELD_REF(name, ref_type) \
-	__L_FIELD_REF(name, lros::LRef<ref_type>, ref_type) \
+	__L_FIELD_REF(name, lros::LRef<ref_type>, ref_type, false) \
 
-#define __L_FIELD_MEM(name, member_type, raw_type) \
-private:	\
-	member_type __##name; \
-public:		\
-	raw_type& get_##name() { return *__##name; } \
-	const raw_type& get_##name() const { return *__##name; } \
-	static bool __serialize_##name(lros::LStream& s, const LClassType& e) \
-	{ \
-		std::cout << __FUNCTION__ << std::endl; \
-		return s.write(e.__##name); \
-	} \
-	static bool __deserialize_##name(lros::LStream& s, LClassType& e) \
-	{ \
-		std::cout << __FUNCTION__ << std::endl; \
-		return s.read(e.__##name); \
-	} \
-
-#define L_FIELD_MEM(name, member_type) \
-	__L_FIELD_MEM(name, lros::LMember<member_type>, member_type) \
+#define L_FIELD_REF_NEW(name, ref_type) \
+	__L_FIELD_REF(name, lros::LRef<ref_type>, ref_type, true) \
 
 };
 

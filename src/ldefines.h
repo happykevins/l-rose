@@ -73,167 +73,189 @@ typedef float lfloat;
 typedef double ldouble;
 typedef std::string lstring;
 
-template<typename T> struct LTypeTrait { static const int kValue = l_void; };
-template<> struct LTypeTrait<lbool> { static const int kValue = l_bool; };
-template<> struct LTypeTrait<lbyte> { static const int kValue = l_byte; };
-template<> struct LTypeTrait<lint16> { static const int kValue = l_int16; };
-template<> struct LTypeTrait<lint32> { static const int kValue = l_int32; };
-template<> struct LTypeTrait<lint64> { static const int kValue = l_int64; };
-template<> struct LTypeTrait<lfloat> { static const int kValue = l_float; };
-template<> struct LTypeTrait<ldouble> { static const int kValue = l_double; };
+template<typename T> struct LTypeTrait 
+{ 
+	static const int kValue = l_void; 
+	static inline T default_value() { return T; }
+};
+template<> struct LTypeTrait<lbool> 
+{ 
+	static const int kValue = l_bool; 
+	static inline lbool default_value() { return false; }
+};
+template<> struct LTypeTrait<lbyte> 
+{ 
+	static const int kValue = l_byte; 
+	static inline lbyte default_value() { return 0; }
+};
+template<> struct LTypeTrait<lint16> 
+{ 
+	static const int kValue = l_int16; 
+	static inline lint16 default_value() { return 0; }
+};
+template<> struct LTypeTrait<lint32> 
+{ 
+	static const int kValue = l_int32; 
+	static inline lint32 default_value() { return 0; }
+};
+template<> struct LTypeTrait<lint64> 
+{ 
+	static const int kValue = l_int64; 
+	static inline lint64 default_value() { return 0; }
+};
+template<> struct LTypeTrait<lfloat> 
+{ 
+	static const int kValue = l_float; 
+	static inline lfloat default_value() { return 0.0f; }
+};
+template<> struct LTypeTrait<ldouble> 
+{ 
+	static const int kValue = l_double; 
+	static inline ldouble default_value() { return 0.0f; }
+};
 //template<> struct LType<fix32> { static const int kValue = l_fix32; };
 //template<> struct LType<fix64> { static const int kValue = l_fix64; };
-template<> struct LTypeTrait<lstring> { static const int kValue = l_string; };
+template<> struct LTypeTrait<lstring> 
+{ 
+	static const int kValue = l_string; 
+	static inline const lstring& default_value() { static lstring z_str; return z_str; }
+};
 //template<> struct LType<byte*> { static const int kValue = l_binary; };
 
+class LObject;
+class LStream;
+class LClass;
+
+
+class LRefCounter
+{
+public:
+	LRefCounter()
+		: m_ref_id(0), m_ref_count(0)
+	{
+		static int s_counter = 100;
+		m_ref_id = m_ref_id++;
+	}
+
+	LRefCounter(int _ref_id)
+		: m_ref_id(_ref_id), m_ref_count(0)
+	{
+	}
+
+	static LRefCounter* construct_from_ref_id(int _ref_id)
+	{
+		assert(_ref_id > 0);
+		return new LRefCounter(_ref_id);
+	}
+
+	inline int ref_id() { return m_ref_id; }
+	inline int ref_count() { return m_ref_count; }
+
+	inline int add() { return ++m_ref_count; }
+	inline int release() { return --m_ref_count; }
+
+private:
+	int m_ref_id;
+	int m_ref_count;
+};
 
 template<typename T>
 class LRef
 {
 public:
+	~LRef()
+	{
+		if (m_counter && m_counter->release() == 0)
+		{
+			assert(m_object);
+			delete m_object;
+			m_object = NULL;
+			delete m_counter;
+			m_counter = NULL;
+		}
+	}
+
 	LRef()
-		: m_object(NULL)
+		: m_object(NULL), m_counter(NULL)
 	{
 	}
 
 	LRef(T* object)
 		: m_object(object)
 	{
+		assert(object);
+		m_counter = new LRefCounter;
+		m_counter->add();
 	}
 	LRef(const LRef<T>& rhs)
-		: m_object(rhs.m_object)
+		: m_object(rhs.m_object), m_counter(rhs.m_counter)
 	{
+		assert(rhs.m_object && rhs.m_counter);
+		m_counter->add();
 	}
 	LRef<T>& operator=(const LRef<T>& rhs)
 	{
+		assert(rhs.m_object && rhs.m_counter);
+		if (rhs.ref_id() == ref_id()) // same ref
+			return *this;
+		if (m_counter && m_counter->release() == 0) // release previous
+		{
+			assert(m_object);
+			delete m_object;
+			m_object = NULL;
+			delete m_counter;
+			m_counter = NULL;
+		}
 		m_object = rhs.m_object;
+		m_counter = rhs.m_counter;
+		m_counter->add();
 		return *this;
 	}
 
-	void set_ref_id(int _id)
+	inline void set_ref_id(int _id)
 	{
 
 	}
 
-	int ref_id() const 
+	inline int ref_id() const 
 	{
-		return 0;
+		return m_counter ? m_counter->ref_id() : 0;
 	}
 
-	T* get()
-	{
-		return m_object;
-	}
-
-	const T* get() const
+	inline T* get()
 	{
 		return m_object;
 	}
 
-	T* operator->()
+	inline const T* get() const
 	{
 		return m_object;
 	}
 
-	const T* operator->() const
+	inline T* operator->()
 	{
 		return m_object;
 	}
 
-	T& operator*()
+	inline const T* operator->() const
+	{
+		return m_object;
+	}
+
+	inline T& operator*()
 	{
 		return *m_object;
 	}
 
-	const T& operator*() const
+	inline const T& operator*() const
 	{
 		return *m_object;
 	}
 
 private:
 	T* m_object;
+	LRefCounter* m_counter;
 };
-
-
-template<typename T>
-class LMember
-{
-private:
-	LMember(T* object)
-		: m_object(object)
-	{
-	}
-	LMember(const LMember<T>& rhs)
-		: m_object(rhs.m_object)
-	{
-	}
-	LMember<T>& operator=(const LMember<T>& rhs)
-	{
-		m_object = rhs.m_object;
-		return *this;
-	}
-
-public:
-	LMember()
-		: m_object(NULL)
-	{
-		m_object = new T;
-		assert(m_object);
-	}
-
-	~LMember()
-	{
-		assert(m_object);
-		delete m_object;
-		m_object = NULL;
-	}
-
-	void set_id(int _id)
-	{
-
-	}
-
-	int id() const 
-	{
-		return 0;
-	}
-
-	T* get()
-	{
-		return m_object;
-	}
-
-	const T* get() const
-	{
-		return m_object;
-	}
-
-	T* operator->()
-	{
-		return m_object;
-	}
-
-	const T* operator->() const
-	{
-		return m_object;
-	}
-
-	T& operator*()
-	{
-		return *m_object;
-	}
-
-	const T& operator*() const
-	{
-		return *m_object;
-	}
-
-private:
-	T* m_object;
-};
-
-class LObject;
-class LStream;
 
 // Meta Class Info
 class LClass
